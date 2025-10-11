@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ELF Symbol Tree by Directory</title>
+  <link rel="stylesheet" href="symbols.css">
+</head>
+<body>
+  <header>
+    <h1>ELF Symbol Tree by Directory</h1>
+    <p id="metaSource" class="small" aria-live="polite"></p>
+  </header>
+
+  <section class="panel" aria-label="控制面板">
+    <button id="expandAll" type="button">全部展开</button>
+    <button id="collapseAll" type="button">全部收起</button>
+    <button id="downloadJSON" type="button">导出 JSON</button>
+    <button id="downloadCSV" type="button">导出 CSV</button>
+  </section>
+
+  <section id="stats" class="panel" aria-label="统计摘要"></section>
+  <hr />
+
+  <main id="tree" class="tree" aria-label="符号树" role="tree"></main>
+
+  <footer class="footer">
+    <p>交互：点击 📁/📄 展开/收起；可导出 JSON/CSV。</p>
+    <p>生成信息：<span id="genMeta" aria-live="polite"></span></p>
+  </footer>
+
+  <script src="symbols.js" defer></script>
+</body>
+</html>

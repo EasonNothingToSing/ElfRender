@@ -10,7 +10,7 @@ from elftools.dwarf.descriptions import describe_form_class
 
 # 你的忽略前缀（保持不变）
 IGNORE_BASE_PATHS = [
-    Path(r"E:\Job\Listenai\ListenAI Project\listenai_rtos"),
+    Path(r"D:\\Job\\ListenAI\\project\\ListenAI_Pro"),
     Path(r"\\workspace"),
     Path(r"D:\\vegah_slave\\listenai_rtos"),
 ]

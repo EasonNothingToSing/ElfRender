@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ElfRender</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>ElfRender</h1>
+      <p class="sub">Add an ELF, set ignore paths, generate, then view the report.</p>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <div class="row">
+          <label class="label" for="elfPath">ELF</label>
+          <input id="elfPath" class="input" type="text" placeholder="Select an ELF file…" readonly />
+          <button id="btnAdd" class="btn" type="button">Add</button>
+        </div>
+
+        <div class="row">
+          <label class="label" for="ignorePaths">Ignore Paths</label>
+          <input
+            id="ignorePaths"
+            class="input"
+            type="text"
+            placeholder="Optional. Separate multiple paths with ;"
+          />
+        </div>
+
+        <div class="row row-actions">
+          <button id="btnGenerate" class="btn primary" type="button">Generate</button>
+          <button id="btnView" class="btn" type="button" disabled>View</button>
+          <span id="status" class="status" aria-live="polite"></span>
+        </div>
+
+        <div class="progress">
+          <div id="progressBar" class="bar" style="width: 0%"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

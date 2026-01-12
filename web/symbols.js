@@ -1,4 +1,4 @@
-/* symbols.js - 纯展开/收起 + 统计 + 导出 */
+/* symbols.js - Expand/collapse + stats + export */
 (function () {
   'use strict';
 
@@ -6,10 +6,10 @@
   const treeRoot = document.getElementById('tree');
   const metaSource = document.getElementById('metaSource');
 
-  // 加载 JSON
+  // Load JSON
   fetch('symbols.json')
     .then(r => {
-      if (!r.ok) throw new Error('无法加载 symbols.json');
+      if (!r.ok) throw new Error('Failed to load symbols.json');
       return r.json();
     })
     .then(payload => init(payload))
@@ -30,7 +30,7 @@
     renderStats(STATS);
     renderTree(DATA, treeRoot);
     wireControls(payload);
-    // 初始：全部收起
+    // Initial state: collapse all
     document.getElementById('collapseAll').click();
   }
 
@@ -118,7 +118,7 @@
   function wireControls(payload) {
     const treeRoot = document.getElementById('tree');
 
-    // 点击展开/收起（事件委派）
+    // Expand/collapse (event delegation)
     treeRoot.addEventListener('click', (e) => {
       const t = e.target.closest('.toggle');
       if (!t) return;
@@ -133,7 +133,7 @@
     document.getElementById('expandAll').addEventListener('click', () => setAll(true));
     document.getElementById('collapseAll').addEventListener('click', () => setAll(false));
 
-    // 导出
+    // Export
     function download(filename, text) {
       const blob = new Blob([text], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
@@ -143,7 +143,7 @@
     }
 
     document.getElementById('downloadJSON').addEventListener('click', () => {
-      // 直接下载当前目录下的 symbols.json（原样）
+      // Download symbols.json as-is
       fetch('symbols.json').then(r => r.text()).then(txt => download('symbols.json', txt));
     });
 

@@ -4,8 +4,9 @@ Generate an interactive, tree-view report of symbol sizes from ELF binaries—gr
 
 This project consists of:
 
-* A **Python generator** (`gen_symbols_report.py`) that parses **DWARF** and **ELF symbol tables**, merges results, and writes `symbols.json`.
-* A **pure static UI** (`symbols.html`, `symbols.css`, `symbols.js`) that loads `symbols.json` and renders a collapsible tree. You can **expand/collapse** and **export JSON/CSV** from the browser.
+* A **pywebview GUI** (`main.py`) that lets you pick an ELF, set ignore paths, generate the report, and open the viewer.
+* A **CLI generator** (`cli.py`) that parses **DWARF** and **ELF symbol tables**, merges results, and writes `symbols.json`.
+* A **pure static viewer** (`web/symbols.html`, `web/symbols.css`, `web/symbols.js`) that loads `symbols.json` and renders a collapsible tree.
 
 ---
 
@@ -42,10 +43,18 @@ No web server required: the UI is plain HTML/CSS/JS that opens in your browser.
 
 ## Quick Start
 
+### GUI
+
+```bash
+python main.py
+```
+
+### CLI
+
 1. **Generate data**
 
    ```bash
-   python3 gen_symbols_report.py /path/to/your.elf outdir
+  python cli.py /path/to/your.elf outdir
    ```
 
    This produces:

@@ -1,10 +1,16 @@
 [project]
-name = "elfrender"
+name = "dwarfer"
 version = "0.1.0"
-description = "Add your description here"
+description = "ELF/DWARF symbol size analyzer with GUI - Parse and visualize memory usage from ELF binaries"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pyelftools>=0.32",
     "pywebview>=6.1",
+]
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.18",
+    "pillow>=12.1",
 ]

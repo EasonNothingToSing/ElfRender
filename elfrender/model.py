@@ -99,33 +99,176 @@ def _comp_dir_from_cu(cu) -> str:
     return ""
 
 
+def _addr_from_location(location_attr, addr_size: int) -> int | None:
+    """Extract absolute address from DW_AT_location (best-effort for simple cases).
+    
+    Supports:
+    - DW_FORM_exprloc / DW_FORM_block* with DW_OP_addr
+    - Simple single-address location expressions
+    """
+    if not location_attr:
+        return None
+    
+    try:
+        form_class = describe_form_class(location_attr.form)
+        if form_class not in ("exprloc", "block"):
+            return None
+        
+        expr = location_attr.value
+        if not isinstance(expr, (bytes, bytearray)) or len(expr) < 1:
+            return None
+        
+        # DW_OP_addr (0x03) followed by address
+        if expr[0] == 0x03 and len(expr) >= 1 + addr_size:
+            addr = int.from_bytes(expr[1:1+addr_size], byteorder='little')
+            return addr
+        
+        return None
+    except Exception:
+        return None
+
+
+def _type_size(type_die, addr_size: int, visited: set[int] | None = None) -> int:
+    """Infer size from DW_AT_type recursively (typedef, pointer, array, etc.)."""
+    if type_die is None:
+        return 0
+    
+    if visited is None:
+        visited = set()
+    
+    try:
+        die_offset = type_die.offset
+        if die_offset in visited:
+            return 0
+        visited.add(die_offset)
+    except Exception:
+        return 0
+    
+    # Direct byte_size
+    byte_size_attr = type_die.attributes.get("DW_AT_byte_size")
+    if byte_size_attr:
+        try:
+            return int(byte_size_attr.value)
+        except Exception:
+            pass
+    
+    tag = type_die.tag
+    
+    # Typedefs, const, volatile: follow the chain
+    if tag in ("DW_TAG_typedef", "DW_TAG_const_type", "DW_TAG_volatile_type", 
+               "DW_TAG_restrict_type", "DW_TAG_atomic_type"):
+        try:
+            base = type_die.get_DIE_from_attribute("DW_AT_type")
+            return _type_size(base, addr_size, visited)
+        except Exception:
+            return 0
+    
+    # Pointers: use address_size
+    if tag in ("DW_TAG_pointer_type", "DW_TAG_reference_type", "DW_TAG_rvalue_reference_type"):
+        return addr_size
+    
+    # Arrays: element_size * count
+    if tag == "DW_TAG_array_type":
+        try:
+            elem = type_die.get_DIE_from_attribute("DW_AT_type")
+            elem_size = _type_size(elem, addr_size, visited)
+            if elem_size <= 0:
+                return 0
+            
+            total_count = 1
+            for child in type_die.iter_children():
+                if child.tag == "DW_TAG_subrange_type":
+                    count_attr = child.attributes.get("DW_AT_count")
+                    upper_attr = child.attributes.get("DW_AT_upper_bound")
+                    lower_attr = child.attributes.get("DW_AT_lower_bound")
+                    
+                    if count_attr:
+                        try:
+                            total_count *= int(count_attr.value)
+                        except Exception:
+                            pass
+                    elif upper_attr:
+                        try:
+                            upper = int(upper_attr.value)
+                            lower = int(lower_attr.value) if lower_attr else 0
+                            total_count *= (upper - lower + 1)
+                        except Exception:
+                            pass
+            
+            return elem_size * total_count
+        except Exception:
+            return 0
+    
+    return 0
+
+
 def _parse_dwarf_items(elffile: ELFFile) -> list[dict[str, Any]]:
     """Collect symbols from DWARF DIEs."""
 
     results: list[dict[str, Any]] = []
     dwarfinfo = elffile.get_dwarf_info()
 
+    # Get address_size from DWARF info (safely)
+    addr_size = 4  # default fallback
+    try:
+        # Try getting from config
+        addr_size = int(getattr(dwarfinfo.config, 'default_address_size', 0) or 
+                       getattr(dwarfinfo.config, 'address_size', 0) or 4)
+    except Exception:
+        # Try getting from first CU
+        try:
+            for cu in dwarfinfo.iter_CUs():
+                addr_size = cu['address_size']
+                break
+        except Exception:
+            addr_size = 4
+    
     for cu in dwarfinfo.iter_CUs():
         lineprog = dwarfinfo.line_program_for_CU(cu)
         file_entries = lineprog["file_entry"] if lineprog else None
         comp_dir = _comp_dir_from_cu(cu)
 
         for die in cu.iter_DIEs():
-            if die.tag not in ("DW_TAG_subprogram", "DW_TAG_variable", "DW_TAG_member"):
+            if die.tag not in ("DW_TAG_subprogram", "DW_TAG_variable"):
                 continue
 
-            lowpc = die.attributes.get("DW_AT_low_pc")
-            highpc = die.attributes.get("DW_AT_high_pc")
-            if lowpc and highpc:
-                lowpc_val = int(lowpc.value)
-                highpc_attr = highpc
-                if describe_form_class(highpc_attr.form) == "address":
-                    highpc_val = int(highpc_attr.value)
+            name_attr = die.attributes.get("DW_AT_name")
+
+            lowpc_val = None
+            size = 0
+            
+            if die.tag == "DW_TAG_subprogram":
+                lowpc = die.attributes.get("DW_AT_low_pc")
+                highpc = die.attributes.get("DW_AT_high_pc")
+                if lowpc and highpc:
+                    lowpc_val = int(lowpc.value)
+                    highpc_attr = highpc
+                    if describe_form_class(highpc_attr.form) == "address":
+                        highpc_val = int(highpc_attr.value)
+                    else:
+                        highpc_val = lowpc_val + int(highpc_attr.value)
+                    size = max(0, int(highpc_val - lowpc_val))
+            
+            elif die.tag == "DW_TAG_variable":
+                # Collect all variables - let ELF stage decide what to display
+                # Try to get address from DW_AT_location
+                location_attr = die.attributes.get("DW_AT_location")
+                lowpc_val = _addr_from_location(location_attr, addr_size)
+                
+                # Get size: first try DW_AT_byte_size, then infer from type
+                byte_size_attr = die.attributes.get("DW_AT_byte_size")
+                if byte_size_attr:
+                    try:
+                        size = int(byte_size_attr.value)
+                    except Exception:
+                        size = 0
                 else:
-                    highpc_val = lowpc_val + int(highpc_attr.value)
-                size = max(0, int(highpc_val - lowpc_val))
-            else:
-                lowpc_val, size = None, 0
+                    # Infer from type
+                    try:
+                        type_die = die.get_DIE_from_attribute("DW_AT_type")
+                        size = _type_size(type_die, addr_size)
+                    except Exception:
+                        size = 0
 
             srcfile = "<unknown>"
             if "DW_AT_decl_file" in die.attributes and file_entries:
@@ -137,7 +280,6 @@ def _parse_dwarf_items(elffile: ELFFile) -> list[dict[str, Any]]:
                     except Exception:
                         srcfile = str(entry.name)
 
-            name_attr = die.attributes.get("DW_AT_name")
             if name_attr:
                 try:
                     name = name_attr.value.decode("utf-8", errors="ignore")
@@ -202,40 +344,69 @@ def _parse_elf_symbols(elffile: ELFFile) -> list[dict[str, Any]]:
 def _merge_results_with_elf(results: list[dict[str, Any]], elffile: ELFFile) -> list[dict[str, Any]]:
     """Merge ELF symbols into DWARF results and backfill paths when possible."""
 
-    out = list(results)
     dwarfinfo = elffile.get_dwarf_info() if elffile.has_dwarf_info() else None
 
-    seen: set[tuple[int, int, str]] = set()
+    # Build name+size based index from DWARF results
+    # This allows matching even when DWARF has wrong/missing address
+    dwarf_by_name_size: dict[tuple[str, int], dict[str, Any]] = {}
     for r in results:
-        key = (int(r.get("addr") or 0), int(r.get("size") or 0), str(r.get("name") or ""))
-        seen.add(key)
+        name = str(r.get("name") or "")
+        size = int(r.get("size") or 0)
+        if name and name != "<unnamed>":
+            dwarf_by_name_size[(name, size)] = r
+    
+    # Also track by address for functions
+    seen_addrs: set[int] = set()
+    for r in results:
+        addr = r.get("addr")
+        if addr is not None and addr != 0:
+            seen_addrs.add(int(addr))
 
+    # ELF symbols are the source of truth for what to display
+    out = []
+    
     for e in _parse_elf_symbols(elffile):
-        key = (int(e["addr"] or 0), int(e["size"] or 0), str(e["name"] or ""))
-        if key in seen:
+        elf_name = str(e["name"] or "")
+        elf_size = int(e["size"] or 0)
+        elf_addr = int(e["addr"] or 0)
+        
+        # Check if we have DWARF info for this symbol by name+size
+        key = (elf_name, elf_size)
+        if key in dwarf_by_name_size:
+            # Merge: use DWARF path info + ELF address/size
+            dwarf_rec = dwarf_by_name_size[key]
+            out.append({
+                "name": elf_name,
+                "srcfile": dwarf_rec.get("srcfile") or "<unknown>",
+                "size": elf_size,
+                "dir": dwarf_rec.get("dir") or "",
+                "addr": elf_addr,
+                "from": "DWARF+ELF",
+                "section": e.get("section") or "<no-section>",
+            })
             continue
-
+        
+        # No DWARF info, try backfilling from line info
         srcfile, comp_dir = "<unknown>", ""
-        if dwarfinfo and e["addr"]:
-            cu, lineprog = _lookup_cu_by_addr(dwarfinfo, int(e["addr"]))
+        if dwarfinfo and elf_addr:
+            cu, lineprog = _lookup_cu_by_addr(dwarfinfo, elf_addr)
             if cu:
                 comp_dir = _comp_dir_from_cu(cu) or ""
-                fn = _file_from_lineprog(lineprog, int(e["addr"]))
+                fn = _file_from_lineprog(lineprog, elf_addr)
                 if fn:
                     srcfile = fn.replace("\\\\", "/").lstrip("./") or "<unknown>"
 
         out.append(
             {
-                "name": e["name"] or "<unnamed>",
+                "name": elf_name,
                 "srcfile": srcfile,
-                "size": int(e["size"] or 0),
+                "size": elf_size,
                 "dir": comp_dir or "",
-                "addr": int(e["addr"] or 0),
+                "addr": elf_addr,
                 "from": "ELF",
                 "section": e.get("section") or "<no-section>",
             }
         )
-        seen.add(key)
 
     return out
 
@@ -270,7 +441,7 @@ def build_tree(
         if size <= 0:
             continue
 
-        if origin == "ELF" and (not comp_dir or srcfile == "<unknown>"):
+        if origin == "ELF" and srcfile == "<unknown>":
             bucket_dir = "[NO_DWARF]"
             bucket_sec = str(section or "<no-section>")
             node = tree.setdefault(bucket_dir, {"__type__": "dir", "__children__": {}, "__size__": 0})[

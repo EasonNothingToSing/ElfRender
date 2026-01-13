@@ -21,9 +21,7 @@ from elftools.elf.sections import SymbolTableSection
 
 
 DEFAULT_IGNORE_BASE_PATHS: list[Path] = [
-    Path(r"D:\\Job\\ListenAI\\project\\ListenAI_Pro"),
     Path(r"\\\\workspace"),
-    Path(r"D:\\vegah_slave\\listenai_rtos"),
 ]
 
 

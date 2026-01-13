@@ -44,8 +44,8 @@ class AppController:
             webview.FileDialog.OPEN,
             allow_multiple=False,
             file_types=(
-                "ELF files (*.elf;*.axf;*.out;*.bin)",
                 "All files (*.*)",
+                "ELF files (*.elf;*.axf;*.out;*.bin)",
             ),
         )
         if not paths:
